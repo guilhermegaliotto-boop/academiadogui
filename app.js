@@ -34,7 +34,7 @@ function load() {
 }
 
 let S = load();
-const ui = { tab: 'home', view: null, open: null, sync: { state: 'off' }, watchPrompt: null, toast: null, dataMode: 'ex', swap: null };
+const ui = { tab: 'home', view: null, open: null, sync: { state: 'logged-out' }, toast: null, dataMode: 'ex', swap: null };
 
 function save({ sync = true } = {}) {
   if (S.active) S.active.updatedAt = Date.now();
@@ -120,7 +120,8 @@ function buildSets(exId, n) {
   });
 }
 
-function startWorkout(wid, { source = 'app', at = Date.now() } = {}) {
+function startWorkout(wid) {
+  const at = Date.now();
   const w = workout(wid);
   if (!w) return;
   S.active = {
@@ -128,7 +129,6 @@ function startWorkout(wid, { source = 'app', at = Date.now() } = {}) {
     workoutId: w.id,
     workoutName: `${w.name} · ${w.subtitle}`,
     startedAt: at,
-    source,
     currentExId: null,
     lastSetAt: null,
     exercises: w.exercises.map((e) => ({
@@ -298,7 +298,7 @@ function render() {
     ui.view = null;
     html = { history: viewHistory, settings: viewSettings, data: viewData }[ui.tab]?.() ?? viewHome();
   }
-  app.innerHTML = html + (ui.view ? '' : nav()) + (ui.watchPrompt ? watchModal() : '') + (ui.swap ? swapModal() : '');
+  app.innerHTML = html + (ui.view ? '' : nav()) + (ui.swap ? swapModal() : '');
   tick();
 }
 
@@ -350,6 +350,7 @@ function viewHome() {
   return `<main class="page">
     <header class="top"><div><span class="eyebrow">Academia do Gui</span><h1>Treinos</h1></div><div class="kpi"><b>${week.length}</b><small>nesta semana</small></div></header>
     ${weekStrip()}
+    ${['ok', 'syncing'].includes(ui.sync.state) || ui.sync.email ? '' : `<button class="cloud" data-act="tab" data-tab="settings"><span>☁️</span><div class="grow"><b>Salve seus treinos na nuvem</b><small>Entre com e-mail e senha em Ajustes</small></div><span class="chev">›</span></button>`}
     ${resume}${hero}
     <h3 class="sec">${S.active ? 'Treinos' : 'Outros treinos'}</h3>
     <div class="list">${others}</div>
@@ -435,7 +436,7 @@ function viewActive() {
   const pct = (done / a.exercises.length) * 100;
   return `<header class="livebar">
       <button class="back" data-act="home">‹</button>
-      <div class="grow"><small>${esc(a.workoutName)}${a.source === 'watch' ? ' · ⌚' : ''}</small><b class="mono big" data-timer="${a.startedAt}"></b></div>
+      <div class="grow"><small>${esc(a.workoutName)}</small><b class="mono big" data-timer="${a.startedAt}"></b></div>
       <div class="count"><b>${done}</b>/${a.exercises.length}</div>
       <div class="pbar"><i style="width:${pct}%"></i></div>
     </header>
@@ -475,7 +476,7 @@ function viewHistory() {
     const done = s.exercises.filter((e) => e.doneAt).length;
     return `${head}<button class="wrow" data-act="session" data-id="${s.id}">
       <span class="tag lg">${esc(s.workoutId)}</span>
-      <div class="grow"><b>${esc(s.workoutName.split('·')[1]?.trim() || s.workoutName)}</b><small>${fmtDate(s.startedAt)} · ${fmtTime(s.startedAt)}${s.source === 'watch' ? ' · ⌚' : ''}</small></div>
+      <div class="grow"><b>${esc(s.workoutName.split('·')[1]?.trim() || s.workoutName)}</b><small>${fmtDate(s.startedAt)} · ${fmtTime(s.startedAt)}</small></div>
       <div class="r"><b class="mono">${fmtDur(s.endedAt - s.startedAt, true)}</b><small>${done}/${s.exercises.length}</small></div>
     </button>`;
   }).join('');
@@ -490,7 +491,7 @@ function viewSession(id) {
   return `<main class="page">
     <header class="bar"><button class="back" data-act="back">‹ ${ui.view.fresh ? 'Início' : 'Histórico'}</button><button class="link danger" data-act="delsession" data-id="${s.id}">Apagar</button></header>
     ${ui.view.fresh ? '<div class="hint good"><b>Treino salvo! 🎉</b><small>Os pesos de cada série já ficam preenchidos no próximo treino.</small></div>' : ''}
-    <span class="eyebrow">${fmtDate(s.startedAt)} · ${fmtTime(s.startedAt)}–${fmtTime(s.endedAt)}${s.source === 'watch' ? ' · ⌚ Apple Watch' : ''}</span>
+    <span class="eyebrow">${fmtDate(s.startedAt)} · ${fmtTime(s.startedAt)}–${fmtTime(s.endedAt)}</span>
     <h1>${esc(s.workoutName)}</h1>
     <div class="stats">
       <div><small>Duração</small><b class="mono">${fmtDur(s.endedAt - s.startedAt, true)}</b></div>
@@ -657,11 +658,8 @@ function viewPicker(v) {
 // ---------- ajustes ----------
 function viewSettings() {
   const st = ui.sync;
-  const cfg = Sync.config();
-  const base = location.origin + location.pathname;
   const status = {
-    off: 'Desligada. Os dados ficam salvos só neste aparelho.',
-    'logged-out': st.message || 'Configurada, mas sem login.',
+    'logged-out': st.message || 'Entre para salvar seus treinos na nuvem (Supabase). Sem login, eles ficam só neste aparelho.',
     syncing: 'Sincronizando…',
     ok: `Sincronizado ${st.at ? 'às ' + fmtTime(st.at) : ''} ${st.email ? '· ' + esc(st.email) : ''}`,
     error: 'Erro: ' + esc(st.message || ''),
@@ -676,29 +674,15 @@ function viewSettings() {
     </section>
 
     <section class="card">
-      <h3>⌚ Apple Watch</h3>
-      <p>O app começa a contar sozinho quando você inicia <b>Força Tradicional</b> no relógio. Isso funciona com uma automação do app Atalhos do iPhone:</p>
-      <ol class="steps">
-        <li>Atalhos → <b>Automação</b> → <b>+</b> → <b>Treino do Apple Watch</b>.</li>
-        <li>Marque <b>Inicia</b>, tipo <b>Força Tradicional</b>, e <b>Executar Imediatamente</b>.</li>
-        <li>Ação <b>Abrir URLs</b> com:<br><code class="copy" data-act="copy" data-text="${esc(base)}?watch=start">${esc(base)}?watch=start</code></li>
-        <li>(Opcional) Outra automação com <b>Termina</b>:<br><code class="copy" data-act="copy" data-text="${esc(base)}?watch=end">${esc(base)}?watch=end</code></li>
-      </ol>
-      <p class="muted small">Toque no link para copiar. O link abre no Safari: se você usa o app pela tela inicial, ligue a sincronização abaixo para os dois ficarem iguais.</p>
-    </section>
-
-    <section class="card">
-      <h3>☁️ Sincronização (Supabase)</h3>
+      <h3>☁️ Conta na nuvem</h3>
       <p class="muted small">${status}</p>
-      ${st.state === 'ok' || st.state === 'syncing' ? `<div class="row"><button class="btn ghost sm" data-act="syncnow">Sincronizar agora</button><button class="btn ghost sm danger" data-act="syncoff">Desconectar</button></div>` : `
+      ${st.state === 'ok' || st.state === 'syncing' || (st.state === 'error' && st.email) ? `<div class="row"><button class="btn ghost sm" data-act="syncnow">Sincronizar agora</button><button class="btn ghost sm danger" data-act="syncoff">Sair</button></div>` : `
       <form id="syncform" class="form">
-        <label class="fld">Project URL<input name="url" placeholder="https://xxxx.supabase.co" value="${esc(cfg?.url || '')}" required></label>
-        <label class="fld">Anon / publishable key<input name="key" value="${esc(cfg?.key || '')}" required></label>
         <label class="fld">E-mail<input name="email" type="email" autocomplete="username" required></label>
         <label class="fld">Senha<input name="password" type="password" autocomplete="current-password" required minlength="6"></label>
-        <div class="row"><button class="btn primary sm" name="go" value="in">Entrar</button><button class="btn ghost sm" name="go" value="up">Criar conta</button></div>
+        <button class="btn primary big">Entrar</button>
       </form>
-      <p class="muted small">Antes, rode o arquivo <code>supabase/schema.sql</code> no SQL Editor do seu projeto.</p>`}
+      <p class="muted small">Primeira vez? Use qualquer e-mail e senha: a conta é criada na hora. Você só faz isso uma vez por aparelho.</p>`}
     </section>
 
     <section class="card">
@@ -709,17 +693,6 @@ function viewSettings() {
     </section>
     <p class="muted small center">Fotos das máquinas: catálogo Cimerian.</p>
   </main>`;
-}
-
-function watchModal() {
-  const p = ui.watchPrompt;
-  const next = suggestedNext();
-  return `<div class="modal"><div class="sheet">
-    <span class="eyebrow">⌚ Apple Watch · ${fmtTime(p.at)}</span>
-    <h2>Qual treino você vai fazer?</h2>
-    ${S.workouts.map((w) => `<button class="btn ${w.id === next ? 'primary' : 'ghost'} big" data-act="watchpick" data-id="${w.id}">${esc(w.id)} · ${esc(w.subtitle)}${w.id === next ? ' (próximo)' : ''}</button>`).join('')}
-    <button class="link full" data-act="watchcancel">Agora não</button>
-  </div></div>`;
 }
 
 // ---------- relógios ----------
@@ -798,8 +771,6 @@ document.addEventListener('click', (ev) => {
     case 'syncnow': Sync.syncNow(); return;
     case 'syncoff': Sync.disconnect(); return;
     case 'export': return exportJSON();
-    case 'watchpick': { const at = ui.watchPrompt.at; ui.watchPrompt = null; return startWorkout(id, { source: 'watch', at }); }
-    case 'watchcancel': ui.watchPrompt = null; break;
     default: return;
   }
   render();
@@ -841,7 +812,7 @@ app.addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const fd = new FormData(ev.target);
   try {
-    await Sync.connect({ url: fd.get('url'), key: fd.get('key'), email: fd.get('email'), password: fd.get('password'), signup: ev.submitter?.value === 'up' });
+    await Sync.connect({ email: fd.get('email'), password: fd.get('password') });
   } catch (e) {
     ui.sync = { state: 'error', message: e.message || String(e) }; render();
   }
@@ -868,23 +839,6 @@ function exportJSON() {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-// ---------- integração Apple Watch (via Atalhos) ----------
-function handleUrl() {
-  const p = new URLSearchParams(location.search);
-  const w = p.get('watch');
-  if (!w) return;
-  history.replaceState(null, '', location.pathname);
-  const at = Number(p.get('t')) || Date.now();
-  if (w === 'start') {
-    if (S.active) { ui.view = { type: 'active' }; toast('Treino já em andamento'); return; }
-    const wid = (p.get('w') || '').toUpperCase();
-    if (workout(wid)) startWorkout(wid, { source: 'watch', at });
-    else ui.watchPrompt = { at };
-  } else if (w === 'end' && S.active) {
-    finishWorkout(true);
-  }
-}
-
 // ---------- inicialização ----------
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') { keepAwake(); Sync.schedule(); tick(); }
@@ -892,7 +846,6 @@ document.addEventListener('visibilitychange', () => {
 
 if (S.active) ui.view = { type: 'active' };
 localStorage.setItem(KEY, JSON.stringify(S));
-handleUrl();
 render();
 
 Sync.init({
@@ -907,7 +860,7 @@ Sync.init({
       render();
     }
   },
-  status: (s) => { ui.sync = s; if (ui.tab === 'settings' && !ui.view) render(); },
+  status: (s) => { ui.sync = s; if (!ui.view && !['INPUT', 'SELECT'].includes(document.activeElement?.tagName)) render(); },
 });
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});

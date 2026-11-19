@@ -19,19 +19,13 @@ Web app (PWA) de academia para iPhone: checklist dos treinos A/B/C com foto de c
 - Por exercício: carga da série mais pesada, 1RM estimado (Epley), tempo por exercício, tabela de sessões e recomendação de progressão (subir carga quando bater o topo da faixa de reps em todas as séries).
 - Por grupo muscular: séries por semana (principal = 1, secundário = ½) comparadas à faixa de 10–20, equilíbrio puxar/empurrar e quadríceps/posteriores.
 
-## Apple Watch (via app Atalhos)
-Um web app não acessa o HealthKit, mas a automação do app Atalhos faz a ponte:
-1. Atalhos → Automação → **+** → **Treino do Apple Watch** → **Inicia** → tipo **Força Tradicional** → **Executar Imediatamente**.
-2. Ação **Abrir URLs**: `https://SEU-LINK/?watch=start` (ou `?watch=start&w=A` para escolher o treino direto).
-3. Opcional: outra automação para **Termina** → `https://SEU-LINK/?watch=end` finaliza e salva.
+## Nuvem (Supabase)
+O app já vem ligado ao projeto Supabase `paorlkgemjqklsruvrsf`. Configuração (uma vez só):
+1. Supabase → **SQL Editor** → cole e rode `supabase/schema.sql`.
+2. Supabase → **Authentication → Sign In / Providers → Email** → desligue **Confirm email** (ou confirme pelo e-mail que chegar).
+3. No app: **Ajustes → Conta na nuvem** → e-mail e senha → **Entrar**. A conta é criada na primeira vez.
 
-O link da automação abre no Safari. Se você usa o app pela tela inicial, ligue a sincronização com o Supabase para que os dois vejam os mesmos dados.
-
-## Sincronização com Supabase (opcional)
-1. No projeto Supabase: SQL Editor → rode `supabase/schema.sql`.
-2. No app: Ajustes → cole a Project URL e a anon key → **Criar conta** e depois **Entrar**.
-   - Se a confirmação de e-mail estiver ligada (Authentication → Providers → Email), confirme o e-mail ou desligue essa opção.
-3. Os dados ficam numa linha por usuário, protegida por RLS.
+Os dados ficam numa linha por usuário, protegida por RLS: só você logado consegue ler ou gravar.
 
 ## Editar treinos
 Na tela de um treino, toque em **Editar**: renomeie, mude séries e reps, reordene, adicione ou remova exercícios e troque a foto escolhendo qualquer máquina do catálogo.

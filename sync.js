@@ -1,5 +1,7 @@
 // Sincronização opcional com Supabase (login com e-mail e senha, uma linha por usuário).
-const CFG_KEY = 'treinoabc:sync';
+// Projeto Supabase fixo do app (a publishable key é pública por natureza; os dados ficam protegidos por RLS).
+const SUPABASE_URL = 'https://paorlkgemjqklsruvrsf.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_8hit44__oaxgumViVmrFgQ_ml7eGf7T';
 const SUPABASE_ESM = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 
 let client = null;
@@ -9,9 +11,6 @@ let timer = null;
 let busy = false;
 let again = false;
 
-export function config() {
-  try { return JSON.parse(localStorage.getItem(CFG_KEY)); } catch { return null; }
-}
 export function currentUser() { return user; }
 
 function setStatus(s) { hooks.status(s); }
@@ -23,10 +22,8 @@ async function makeClient(url, key) {
 
 export async function init(h) {
   hooks = h;
-  const cfg = config();
-  if (!cfg) return setStatus({ state: 'off' });
   try {
-    client = await makeClient(cfg.url, cfg.key);
+    client = await makeClient(SUPABASE_URL, SUPABASE_KEY);
     const { data } = await client.auth.getSession();
     user = data.session?.user ?? null;
     if (!user) return setStatus({ state: 'logged-out' });
@@ -36,27 +33,35 @@ export async function init(h) {
   }
 }
 
-export async function connect({ url, key, email, password, signup }) {
-  url = url.trim().replace(/\/$/, '');
-  key = key.trim();
-  client = await makeClient(url, key);
-  const fn = signup ? client.auth.signUp.bind(client.auth) : client.auth.signInWithPassword.bind(client.auth);
-  const { data, error } = await fn({ email: email.trim(), password });
-  if (error) throw error;
-  localStorage.setItem(CFG_KEY, JSON.stringify({ url, key }));
-  user = data.user ?? data.session?.user ?? null;
-  if (!data.session) {
-    setStatus({ state: 'logged-out', message: 'Conta criada. Confirme o e-mail (ou desative a confirmação no Supabase) e entre.' });
-    return;
+// Entra com e-mail e senha; se a conta ainda não existir, cria.
+export async function connect({ email, password }) {
+  client ??= await makeClient(SUPABASE_URL, SUPABASE_KEY);
+  email = email.trim();
+  let { data, error } = await client.auth.signInWithPassword({ email, password });
+  if (error && /invalid login credentials/i.test(error.message)) {
+    const up = await client.auth.signUp({ email, password });
+    if (up.error) {
+      if (/already registered/i.test(up.error.message)) throw new Error('Senha incorreta.');
+      throw up.error;
+    }
+    data = up.data; error = null;
+    if (!data.session) {
+      setStatus({ state: 'logged-out', message: 'Conta criada! Abra o e-mail de confirmação do Supabase e depois toque em Entrar de novo.' });
+      return;
+    }
   }
+  if (error) {
+    if (/email not confirmed/i.test(error.message)) throw new Error('Confirme seu e-mail (link enviado pelo Supabase) e tente de novo.');
+    throw error;
+  }
+  user = data.user ?? data.session?.user ?? null;
   await syncNow();
 }
 
 export async function disconnect() {
   try { await client?.auth.signOut(); } catch {}
-  client = null; user = null;
-  localStorage.removeItem(CFG_KEY);
-  setStatus({ state: 'off' });
+  user = null;
+  setStatus({ state: 'logged-out' });
 }
 
 export function schedule() {
@@ -82,7 +87,8 @@ export async function syncNow() {
     if (upErr) throw upErr;
     setStatus({ state: 'ok', at: Date.now(), email: user.email });
   } catch (e) {
-    setStatus({ state: 'error', message: String(e.message || e) });
+    const msg = String(e.message || e);
+    setStatus({ state: 'error', email: user?.email, message: /gym_state/.test(msg) ? 'A tabela ainda não foi criada no Supabase (rode supabase/schema.sql no SQL Editor).' : msg });
   } finally {
     busy = false;
     if (again) { again = false; schedule(); }
