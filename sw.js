@@ -1,8 +1,8 @@
 // Service worker: funciona offline e guarda as fotos das máquinas depois da primeira vez.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = `shell-${VERSION}`;
 const IMGS = 'machine-photos';
-const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'data.js', 'catalog.js', 'sync.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
+const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'data.js', 'catalog.js', 'sync.js', 'stats.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(SHELL).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
