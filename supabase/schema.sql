@@ -17,3 +17,7 @@ create policy "gym_state insert own" on public.gym_state
   for insert with check (auth.uid() = user_id);
 create policy "gym_state update own" on public.gym_state
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Libera a tabela para a API (projetos novos não expõem tabelas automaticamente).
+-- O RLS acima garante que cada usuário só vê a própria linha.
+grant select, insert, update on public.gym_state to authenticated;
