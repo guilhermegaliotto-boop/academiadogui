@@ -33,7 +33,27 @@ function load() {
   return s;
 }
 
+// Treinos salvos antes da correção: séries com peso/reps digitados mas sem o ✓ não eram contadas.
+// Marca essas séries como feitas (uma vez por sessão).
+function repairSessions(state) {
+  let changed = false;
+  for (const s of state.sessions || []) {
+    if (s.v >= 2) continue;
+    for (const e of s.exercises) {
+      if (e.skipped || e.sets.some((x) => x.done)) continue;
+      for (const x of e.sets) {
+        if (String(x.w ?? '') !== '' || String(x.r ?? '') !== '') { x.done = true; x.at ??= e.doneAt || s.endedAt; }
+      }
+    }
+    s.v = 2;
+    s.updatedAt = Date.now();
+    changed = true;
+  }
+  return changed;
+}
+
 let S = load();
+const repairedOnLoad = repairSessions(S);
 const ui = { tab: 'home', view: null, open: null, sync: { state: 'logged-out' }, toast: null, dataMode: 'ex', swap: null };
 
 function save({ sync = true } = {}) {
@@ -204,6 +224,8 @@ function completeExercise(exId) {
   } else {
     ex.startedAt ??= lastMark();
     ex.doneAt = Date.now();
+    // concluir conta todas as séries com peso ou reps preenchidos
+    ex.sets.forEach((x) => { if (!x.done && (x.w !== '' || x.r !== '')) { x.done = true; x.at = ex.doneAt; } });
     advance(exId);
   }
   save(); render();
@@ -239,11 +261,13 @@ function finishWorkout(skipConfirm = false) {
   const end = Date.now();
   const session = {
     ...a,
+    v: 2,
     endedAt: end,
     updatedAt: end,
     exercises: a.exercises.map((e) => ({
       ...e,
-      sets: e.sets.map(({ prev, ...s }) => s),
+      // séries em que você digitou algo contam como feitas, mesmo sem o ✓
+      sets: e.sets.map(({ prev, edited, ...s }) => (!e.skipped && edited && !s.done && (s.w !== '' || s.r !== '') ? { ...s, done: true, at: end } : s)),
       durationMs: e.doneAt && e.startedAt ? e.doneAt - e.startedAt : null,
     })),
   };
@@ -783,7 +807,9 @@ app.addEventListener('input', (ev) => {
   const el = ev.target;
   if (el.dataset.field && S.active) {
     const ex = actEx(el.dataset.id);
-    ex.sets[Number(el.dataset.i)][el.dataset.field] = el.value.replace(',', '.').trim();
+    const set = ex.sets[Number(el.dataset.i)];
+    set[el.dataset.field] = el.value.replace(',', '.').trim();
+    set.edited = true;
     save();
   } else if (el.dataset.efield) {
     const e = workout(el.dataset.wid).exercises[Number(el.dataset.i)];
@@ -846,6 +872,7 @@ document.addEventListener('visibilitychange', () => {
 
 if (S.active) ui.view = { type: 'active' };
 localStorage.setItem(KEY, JSON.stringify(S));
+if (repairedOnLoad) setTimeout(() => Sync.schedule(), 3000);
 render();
 
 Sync.init({
@@ -854,6 +881,7 @@ Sync.init({
     const before = JSON.stringify(S);
     S = { ...fresh(), ...merged, settings: { ...fresh().settings, ...(merged.settings || {}) } };
     if ((S.dataVersion || 1) < DATA_VERSION) { S.workouts = structuredClone(DEFAULT_WORKOUTS); S.workoutsUpdatedAt = Date.now(); S.dataVersion = DATA_VERSION; }
+    if (repairSessions(S)) Sync.schedule();
     localStorage.setItem(KEY, JSON.stringify(S));
     if (JSON.stringify(S) !== before && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
       if (S.active && !ui.view) ui.view = { type: 'active' };
